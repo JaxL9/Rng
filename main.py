@@ -1,60 +1,76 @@
 import random
 import math
+import json
+import os
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.widget import Widget
 from kivy.uix.label import Label
 from kivy.uix.button import Button
-
 from kivy.clock import Clock
 from kivy.animation import Animation
+from kivy.graphics import Color, Ellipse, Rectangle
 
-from kivy.graphics import Color, Ellipse, Line, Rectangle
+# ---------------- SAVE FILE ----------------
+SAVE_FILE = "save.json"
 
-# ---------------- RARITY WHEEL ----------------
+# ---------------- RARITIES ----------------
 RARITIES = [
-    ("Common", 60, (1,1,1,1)),
-    ("Uncommon", 25, (0.4,1,0.4,1)),
+    ("Common", 65, (1,1,1,1)),
+    ("Uncommon", 20, (0.4,1,0.4,1)),
     ("Rare", 10, (0.3,0.6,1,1)),
-    ("Epic", 4, (0.8,0.3,1,1)),
-    ("Legendary", 0.9, (1,0.8,0.2,1)),
-    ("Mythic", 0.1, (1,0.2,0.2,1))
+    ("Epic", 3, (0.8,0.3,1,1)),
+    ("Legendary", 1.5, (1,0.8,0.2,1)),
+    ("Mythic", 0.5, (1,0.2,0.2,1))
 ]
 
 ITEMS = {
     "Common": "Rock",
     "Uncommon": "Iron",
-    "Rare": "Gem",
-    "Epic": "Dragon Scale",
+    "Rare": "Crystal",
+    "Epic": "Dragon Core",
     "Legendary": "Excalibur",
-    "Mythic": "Infinity Core"
+    "Mythic": "Infinity Relic"
 }
 
-# ---------------- PARTICLE ----------------
+# ---------------- SAVE SYSTEM ----------------
+def load_data():
+    if os.path.exists(SAVE_FILE):
+        with open(SAVE_FILE, "r") as f:
+            return json.load(f)
+    return {"rolls": 0, "mythics": 0, "legendaries": 0}
+
+def save_data(data):
+    with open(SAVE_FILE, "w") as f:
+        json.dump(data, f)
+
+# ---------------- PARTICLE SYSTEM ----------------
 class Particle(Widget):
     def __init__(self, x, y, color, **kwargs):
         super().__init__(**kwargs)
-        self.x_speed = random.uniform(-6, 6)
-        self.y_speed = random.uniform(3, 8)
-        self.life = 1.0
+
+        self.vx = random.uniform(-6, 6)
+        self.vy = random.uniform(2, 8)
+        self.life = 1
 
         with self.canvas:
             Color(*color)
-            self.dot = Rectangle(pos=(x, y), size=(6,6))
+            self.rect = Rectangle(pos=(x, y), size=(6,6))
 
-        self.pos_x = x
-        self.pos_y = y
+        self.x = x
+        self.y = y
 
         Clock.schedule_interval(self.update, 1/60)
 
     def update(self, dt):
         self.life -= 0.03
-        self.pos_x += self.x_speed
-        self.pos_y += self.y_speed
-        self.y_speed -= 0.2
 
-        self.dot.pos = (self.pos_x, self.pos_y)
+        self.x += self.vx
+        self.y += self.vy
+        self.vy -= 0.25
+
+        self.rect.pos = (self.x, self.y)
 
         if self.life <= 0:
             self.parent.remove_widget(self)
@@ -66,117 +82,143 @@ class Wheel(Widget):
         super().__init__(**kwargs)
 
         self.angle = 0
-        self.result = None
-
-        with self.canvas:
-            self.circle_color = Color(0.2, 0.2, 0.3, 1)
-            self.circle = Ellipse(pos=self.center, size=(300,300))
-
-            self.line_color = Color(1,1,1,1)
-            self.line = Line(circle=(0,0,140), width=2)
+        self.callback = None
 
         Clock.schedule_interval(self.draw, 1/60)
 
     def draw(self, dt):
-        self.circle.pos = (self.center_x - 150, self.center_y - 150)
-
-    def spin(self, callback):
-        self.result = callback
-
-        target_rotation = random.randint(720, 1440)
-
-        anim = Animation(angle=self.angle + target_rotation, duration=2.5, t="out_cubic")
-        anim.bind(on_progress=self.update_rotation)
-        anim.bind(on_complete=self.finish_spin)
-        anim.start(self)
-
-    def update_rotation(self, anim, widget, progress):
         self.canvas.clear()
 
         with self.canvas:
-            Color(0.15,0.15,0.2,1)
-            Ellipse(pos=(self.center_x-150,self.center_y-150), size=(300,300))
+            # OUTER RING (multi-layer wheel feel)
+            Color(0.15,0.15,0.25,1)
+            Ellipse(pos=(self.center_x-160, self.center_y-160), size=(320,320))
 
-            # wheel segments
+            # INNER RING
+            Color(0.1,0.1,0.18,1)
+            Ellipse(pos=(self.center_x-110, self.center_y-110), size=(220,220))
+
+            # SEGMENTS (fake visual wheel)
             for i, (name, _, color) in enumerate(RARITIES):
-                start = i * 60
                 Color(*color)
                 Ellipse(
-                    pos=(self.center_x-150,self.center_y-150),
+                    pos=(self.center_x-150, self.center_y-150),
                     size=(300,300),
-                    angle_start=start + self.angle,
-                    angle_end=start + 60 + self.angle
+                    angle_start=i*60 + self.angle,
+                    angle_end=(i+1)*60 + self.angle
                 )
 
-    def finish_spin(self, *args):
-        rarity = self.pick_rarity()
-        self.result(rarity)
+    # 🎰 SPIN
+    def spin(self, callback):
+        self.callback = callback
 
-    def pick_rarity(self):
-        roll = random.uniform(0,100)
-        total = 0
+        target = random.randint(720, 1440)
 
-        for name, chance, _ in RARITIES:
-            total += chance
-            if roll <= total:
-                return name
+        anim = Animation(angle=self.angle + target, duration=2.5, t="out_cubic")
+        anim.bind(on_complete=lambda *a: self.callback())
+        anim.start(self)
 
-        return "Common"
-
-# ---------------- GAME ----------------
+# ---------------- MAIN GAME ----------------
 class Game(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(orientation="vertical", **kwargs)
 
-        self.result = Label(text="Tap to Spin", font_size=32, size_hint_y=0.2)
+        self.data = load_data()
+
+        # TITLE
+        self.title = Label(text="RNG LEGENDS", font_size=28, size_hint_y=0.15)
+        self.add_widget(self.title)
+
+        # RESULT
+        self.result = Label(text="Tap SPIN", font_size=30, size_hint_y=0.15)
         self.add_widget(self.result)
 
-        self.wheel = Wheel()
+        # WHEEL
+        self.wheel = Wheel(size_hint_y=0.5)
         self.add_widget(self.wheel)
 
+        # BUTTON
         self.btn = Button(text="SPIN", size_hint_y=0.2)
-        self.btn.bind(on_press=self.spin)
+        self.btn.bind(on_press=self.start_spin)
         self.add_widget(self.btn)
 
+        # STATS
+        self.stats = Label(
+            text=self.get_stats(),
+            font_size=16,
+            size_hint_y=0.1
+        )
+        self.add_widget(self.stats)
+
     # ---------------- SPIN ----------------
-    def spin(self, _):
+    def start_spin(self, _):
         self.btn.disabled = True
+        self.result.text = "Spinning..."
 
-        self.wheel.spin(self.show_result)
+        self.wheel.spin(self.finish)
 
-    # ---------------- RESULT ----------------
-    def show_result(self, rarity):
+    # ---------------- FINISH ----------------
+    def finish(self):
+        rarity = self.pick_rarity()
         item = ITEMS[rarity]
 
         self.result.text = f"{item} [{rarity}]"
 
-        color = {
-            "Common": (1,1,1,1),
-            "Uncommon": (0.4,1,0.4,1),
-            "Rare": (0.3,0.6,1,1),
-            "Epic": (0.8,0.3,1,1),
-            "Legendary": (1,0.8,0.2,1),
-            "Mythic": (1,0.2,0.2,1)
-        }[rarity]
-
+        color = next(c for n,_,c in RARITIES if n == rarity)
         self.result.color = color
 
+        # update stats
+        self.data["rolls"] += 1
+
+        if rarity == "Legendary":
+            self.data["legendaries"] += 1
+
+        if rarity == "Mythic":
+            self.data["mythics"] += 1
+
+        save_data(self.data)
+        self.stats.text = self.get_stats()
+
+        # effects
         self.pop_effect()
         self.particles(rarity)
+        self.flash(rarity)
 
         self.btn.disabled = False
 
-    # ---------------- POP ----------------
+    # ---------------- RNG ----------------
+    def pick_rarity(self):
+        r = random.uniform(0,100)
+        total = 0
+
+        for name, chance, _ in RARITIES:
+            total += chance
+            if r <= total:
+                return name
+
+        return "Common"
+
+    # ---------------- EFFECTS ----------------
     def pop_effect(self):
-        anim = Animation(font_size=40, duration=0.1) + Animation(font_size=32, duration=0.1)
+        anim = Animation(font_size=38, duration=0.08) + Animation(font_size=30, duration=0.08)
         anim.start(self.result)
 
-    # ---------------- PARTICLES ----------------
+    def flash(self, rarity):
+        if rarity in ["Epic","Legendary","Mythic"]:
+            with self.canvas.before:
+                Color(1,1,1,0.2 if rarity!="Mythic" else 0.4)
+                self.flash_rect = Rectangle(pos=self.pos, size=self.size)
+
+            Clock.schedule_once(self.clear_flash, 0.15)
+
+    def clear_flash(self, dt):
+        self.canvas.before.clear()
+
     def particles(self, rarity):
         if rarity in ["Epic","Legendary","Mythic"]:
-            count = 25 if rarity != "Mythic" else 60
+            count = 20 if rarity != "Mythic" else 50
 
-            color = {
+            base = {
                 "Epic": (0.8,0.3,1),
                 "Legendary": (1,0.8,0.2),
                 "Mythic": (1,0.2,0.2)
@@ -186,9 +228,13 @@ class Game(BoxLayout):
                 p = Particle(
                     self.center_x,
                     self.center_y,
-                    (*color,1)
+                    (*base,1)
                 )
                 self.add_widget(p)
+
+    # ---------------- STATS ----------------
+    def get_stats(self):
+        return f"Rolls: {self.data['rolls']} | Mythics: {self.data['mythics']} | Legendaries: {self.data['legendaries']}"
 
 # ---------------- APP ----------------
 class RNGApp(App):
