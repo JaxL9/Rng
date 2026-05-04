@@ -1,4 +1,4 @@
-name: Build APK (LOCKED STABLE)
+name: Build APK (FIXED BUILDOSER)
 
 on:
   workflow_dispatch:
@@ -8,79 +8,56 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-
-      # ---------------- CHECKOUT ----------------
-      - uses: actions/checkout@v4
+      # ---------------- CODE ----------------
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       # ---------------- JAVA ----------------
-      - name: Java 17
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
       # ---------------- PYTHON ----------------
-      - name: Python 3.10
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
       # ---------------- SYSTEM ----------------
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt install -y git zip unzip wget openjdk-17-jdk
+          sudo apt install -y git zip unzip openjdk-17-jdk
 
-      # ---------------- HARD RESET CACHE ----------------
-      - name: FULL CLEAN (critical)
+      # ---------------- CLEAN EVERYTHING ----------------
+      - name: Hard reset Buildozer
         run: |
           rm -rf .buildozer
           rm -rf ~/.buildozer
           rm -rf ~/.cache
           rm -rf ~/.local/share/python-for-android
 
-      # ---------------- PYTHON DEPENDENCIES ----------------
-      - name: Install Python deps
+      # ---------------- INSTALL BUILDOZER ----------------
+      - name: Install Buildozer
         run: |
           python -m pip install --upgrade pip
           pip install buildozer cython==0.29.36
 
-      # ---------------- PIN P4A (VERY IMPORTANT) ----------------
-      - name: Install python-for-android (LOCKED)
+      # ---------------- FORCE CLEAN INIT ----------------
+      - name: Initialize Buildozer Android environment
         run: |
-          pip uninstall -y python-for-android || true
-          pip install python-for-android==2023.9.16
+          buildozer --version
+          buildozer android clean || true
+          buildozer android update
 
-      # ---------------- ANDROID SDK (NO 37 EVER) ----------------
-      - name: Android SDK (locked build-tools)
-        run: |
-          export ANDROID_HOME=$HOME/android-sdk
-          mkdir -p $ANDROID_HOME
-          cd $ANDROID_HOME
-
-          wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip commandlinetools-linux-*.zip
-
-          mkdir -p cmdline-tools/latest
-          mv cmdline-tools/* cmdline-tools/latest/ || true
-
-          yes | cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses || true
-
-          # 🔥 ONLY SAFE VERSION
-          cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
-            "platform-tools" \
-            "platforms;android-33" \
-            "build-tools;33.0.2"
-
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
-
-      # ---------------- BUILD ----------------
+      # ---------------- BUILD APK ----------------
       - name: Build APK
         run: |
           buildozer -v android debug
 
-      # ---------------- ARTIFACT ----------------
+      # ---------------- UPLOAD ----------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
