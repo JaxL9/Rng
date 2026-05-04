@@ -4,7 +4,7 @@ package.name = rnglegends
 package.domain = org.rng
 
 source.dir = .
-source.include_exts = py,png,jpg,kv
+source.include_exts = py
 
 version = 1.0
 
