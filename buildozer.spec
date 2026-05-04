@@ -15,24 +15,26 @@ requirements = python3,kivy
 orientation = portrait
 fullscreen = 1
 
-# ---------------- ANDROID (CRITICAL LOCKS) ----------------
+# ---------------- ANDROID CORE ----------------
 
 android.api = 33
 android.minapi = 21
 
-# 🔥 FORCE STABLE TOOLCHAIN
+# 🔥 FORCE STABLE TOOLCHAIN (CRITICAL FIX)
 android.build_tools = 33.0.2
 android.ndk = 25b
 
-# ❌ DO NOT USE THIS (causes 37 fallback)
-# android.sdk = 33   <-- REMOVE IF IT EXISTS
+# ---------------- IMPORTANT FIXES ----------------
 
-# ---------------- FIX AUTO RESOLUTION ----------------
+# ❌ DO NOT USE (causes fallback to 37)
+# android.sdk = 33   <-- MUST NOT EXIST
+
+# Forces Buildozer not to auto-pick latest broken tools
 android.allow_sdk_build_tools_version = 33.0.2
 
-# ---------------- PERFORMANCE ----------------
+# ---------------- PERFORMANCE / LOGS ----------------
 log_level = 2
 warn_on_root = 1
 
-# ---------------- P4A ----------------
+# ---------------- PYTHON-FOR-ANDROID ----------------
 p4a.branch = stable
