@@ -1,228 +1,194 @@
 import random
-import json
-import os
+import math
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.widget import Widget
 from kivy.uix.label import Label
 from kivy.uix.button import Button
-from kivy.uix.gridlayout import GridLayout
-from kivy.core.window import Window
+
 from kivy.clock import Clock
 from kivy.animation import Animation
 
-# ---------------- GAME DATA ----------------
+from kivy.graphics import Color, Ellipse, Line, Rectangle
+
+# ---------------- RARITY WHEEL ----------------
 RARITIES = [
-    ("Common", 60),
-    ("Uncommon", 25),
-    ("Rare", 10),
-    ("Epic", 4),
-    ("Legendary", 0.9),
-    ("Mythic", 0.1)
+    ("Common", 60, (1,1,1,1)),
+    ("Uncommon", 25, (0.4,1,0.4,1)),
+    ("Rare", 10, (0.3,0.6,1,1)),
+    ("Epic", 4, (0.8,0.3,1,1)),
+    ("Legendary", 0.9, (1,0.8,0.2,1)),
+    ("Mythic", 0.1, (1,0.2,0.2,1))
 ]
 
 ITEMS = {
-    "Common": ["Rock"],
-    "Uncommon": ["Iron"],
-    "Rare": ["Gem"],
-    "Epic": ["Dragon Scale"],
-    "Legendary": ["Excalibur"],
-    "Mythic": ["Infinity Core"]
+    "Common": "Rock",
+    "Uncommon": "Iron",
+    "Rare": "Gem",
+    "Epic": "Dragon Scale",
+    "Legendary": "Excalibur",
+    "Mythic": "Infinity Core"
 }
 
-PET_MULT = {
-    "Dog": 1.1,
-    "Dragon": 2.0,
-    "Void Cat": 5.0
-}
+# ---------------- PARTICLE ----------------
+class Particle(Widget):
+    def __init__(self, x, y, color, **kwargs):
+        super().__init__(**kwargs)
+        self.x_speed = random.uniform(-6, 6)
+        self.y_speed = random.uniform(3, 8)
+        self.life = 1.0
 
-MUTATION_MULT = {
-    "Lucky": 1.2,
-    "Blessed": 2.0,
-    "Corrupted": 4.0
-}
+        with self.canvas:
+            Color(*color)
+            self.dot = Rectangle(pos=(x, y), size=(6,6))
 
-SAVE_FILE = "save.json"
+        self.pos_x = x
+        self.pos_y = y
 
-# ---------------- STATE ----------------
-coins = 0
-luck = 1.0
-inventory = []
-pets = []
-mutations = []
+        Clock.schedule_interval(self.update, 1/60)
 
-# ---------------- SAVE SYSTEM ----------------
-def save():
-    data = {
-        "coins": coins,
-        "luck": luck,
-        "inventory": inventory,
-        "pets": pets,
-        "mutations": mutations
-    }
-    with open(SAVE_FILE, "w") as f:
-        json.dump(data, f)
+    def update(self, dt):
+        self.life -= 0.03
+        self.pos_x += self.x_speed
+        self.pos_y += self.y_speed
+        self.y_speed -= 0.2
 
-def load():
-    global coins, luck, inventory, pets, mutations
-    if os.path.exists(SAVE_FILE):
-        with open(SAVE_FILE, "r") as f:
-            d = json.load(f)
-            coins = d.get("coins", 0)
-            luck = d.get("luck", 1.0)
-            inventory = d.get("inventory", [])
-            pets = d.get("pets", [])
-            mutations = d.get("mutations", [])
+        self.dot.pos = (self.pos_x, self.pos_y)
 
-# ---------------- MULTIPLIERS ----------------
-def pet_mult():
-    return max([PET_MULT.get(p, 1) for p in pets], default=1)
+        if self.life <= 0:
+            self.parent.remove_widget(self)
+            return False
 
-def mutation_mult():
-    m = 1
-    for x in mutations:
-        m *= MUTATION_MULT.get(x, 1)
-    return m
+# ---------------- WHEEL ----------------
+class Wheel(Widget):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
-# ---------------- RNG SYSTEM ----------------
-def roll():
-    global coins
+        self.angle = 0
+        self.result = None
 
-    total_mult = luck * pet_mult() * mutation_mult()
+        with self.canvas:
+            self.circle_color = Color(0.2, 0.2, 0.3, 1)
+            self.circle = Ellipse(pos=self.center, size=(300,300))
 
-    roll_val = random.uniform(0, 100) / total_mult
-    current = 0
+            self.line_color = Color(1,1,1,1)
+            self.line = Line(circle=(0,0,140), width=2)
 
-    for rarity, chance in RARITIES:
-        current += chance
-        if roll_val <= current:
-            item = random.choice(ITEMS[rarity])
-            inventory.append(f"{item} [{rarity}]")
-            coins += int(10 * (1 / (chance + 0.01)))
+        Clock.schedule_interval(self.draw, 1/60)
 
-            # mutation chance
-            if random.randint(1, 40) == 1:
-                m = random.choice(list(MUTATION_MULT.keys()))
-                if m not in mutations:
-                    mutations.append(m)
+    def draw(self, dt):
+        self.circle.pos = (self.center_x - 150, self.center_y - 150)
 
-            return f"{item} [{rarity}]"
+    def spin(self, callback):
+        self.result = callback
 
-    return "Nothing"
+        target_rotation = random.randint(720, 1440)
 
-# ---------------- UI ----------------
+        anim = Animation(angle=self.angle + target_rotation, duration=2.5, t="out_cubic")
+        anim.bind(on_progress=self.update_rotation)
+        anim.bind(on_complete=self.finish_spin)
+        anim.start(self)
+
+    def update_rotation(self, anim, widget, progress):
+        self.canvas.clear()
+
+        with self.canvas:
+            Color(0.15,0.15,0.2,1)
+            Ellipse(pos=(self.center_x-150,self.center_y-150), size=(300,300))
+
+            # wheel segments
+            for i, (name, _, color) in enumerate(RARITIES):
+                start = i * 60
+                Color(*color)
+                Ellipse(
+                    pos=(self.center_x-150,self.center_y-150),
+                    size=(300,300),
+                    angle_start=start + self.angle,
+                    angle_end=start + 60 + self.angle
+                )
+
+    def finish_spin(self, *args):
+        rarity = self.pick_rarity()
+        self.result(rarity)
+
+    def pick_rarity(self):
+        roll = random.uniform(0,100)
+        total = 0
+
+        for name, chance, _ in RARITIES:
+            total += chance
+            if roll <= total:
+                return name
+
+        return "Common"
+
+# ---------------- GAME ----------------
 class Game(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(orientation="vertical", **kwargs)
 
-        Window.clearcolor = (0.06, 0.06, 0.08, 1)
+        self.result = Label(text="Tap to Spin", font_size=32, size_hint_y=0.2)
+        self.add_widget(self.result)
 
-        # TOP BAR
-        self.top = BoxLayout(size_hint_y=0.15)
-        self.stats = Label(text="Coins: 0 | Luck: 1.0", font_size=18)
-        self.top.add_widget(self.stats)
-        self.add_widget(self.top)
+        self.wheel = Wheel()
+        self.add_widget(self.wheel)
 
-        # CENTER CARD
-        self.center = BoxLayout()
+        self.btn = Button(text="SPIN", size_hint_y=0.2)
+        self.btn.bind(on_press=self.spin)
+        self.add_widget(self.btn)
 
-        self.card = BoxLayout(orientation="vertical", padding=25, spacing=10)
+    # ---------------- SPIN ----------------
+    def spin(self, _):
+        self.btn.disabled = True
 
-        self.result = Label(text="Tap ROLL", font_size=30)
+        self.wheel.spin(self.show_result)
 
-        self.roll_btn = Button(
-            text="ROLL",
-            font_size=24,
-            background_normal="",
-            background_color=(0.2, 0.6, 1, 1)
-        )
+    # ---------------- RESULT ----------------
+    def show_result(self, rarity):
+        item = ITEMS[rarity]
 
-        self.roll_btn.bind(on_press=self.start_roll_animation)
+        self.result.text = f"{item} [{rarity}]"
 
-        self.card.add_widget(self.result)
-        self.card.add_widget(self.roll_btn)
-
-        self.center.add_widget(self.card)
-        self.add_widget(self.center)
-
-        # BOTTOM BAR
-        self.bottom = GridLayout(cols=3, size_hint_y=0.2)
-
-        self.shop_btn = Button(text="SHOP")
-        self.inv_btn = Button(text="INV")
-        self.save_btn = Button(text="SAVE")
-
-        self.shop_btn.bind(on_press=self.shop)
-        self.inv_btn.bind(on_press=self.show_inv)
-        self.save_btn.bind(on_press=lambda x: save())
-
-        self.bottom.add_widget(self.shop_btn)
-        self.bottom.add_widget(self.inv_btn)
-        self.bottom.add_widget(self.save_btn)
-
-        self.add_widget(self.bottom)
-
-        load()
-        self.update_ui("Loaded Game")
-
-    # ---------------- UI UPDATE ----------------
-    def update_ui(self, msg=""):
-        self.stats.text = f"Coins: {coins} | Luck: {round(luck,2)}"
-        self.result.text = msg
-
-    # ---------------- ROLL ANIMATION ----------------
-    def start_roll_animation(self, _):
-        self.roll_btn.disabled = True
-
-        self.frames = ["Rolling.", "Rolling..", "Rolling...", "Calculating...", "Almost..."]
-        self.i = 0
-
-        self.event = Clock.schedule_interval(self.spin, 0.15)
-
-    def spin(self, dt):
-        self.result.text = self.frames[self.i % len(self.frames)]
-        self.i += 1
-
-        if self.i > 10:
-            self.event.cancel()
-            self.finish_roll()
-
-    # ---------------- FINAL RESULT ----------------
-    def finish_roll(self):
-        result = roll()
-
-        rarity = result.split("[")[-1].replace("]", "")
-
-        colors = {
+        color = {
             "Common": (1,1,1,1),
             "Uncommon": (0.4,1,0.4,1),
             "Rare": (0.3,0.6,1,1),
             "Epic": (0.8,0.3,1,1),
             "Legendary": (1,0.8,0.2,1),
             "Mythic": (1,0.2,0.2,1)
-        }
+        }[rarity]
 
-        self.result.color = colors.get(rarity, (1,1,1,1))
+        self.result.color = color
 
-        anim = Animation(font_size=40, duration=0.1) + Animation(font_size=30, duration=0.1)
+        self.pop_effect()
+        self.particles(rarity)
+
+        self.btn.disabled = False
+
+    # ---------------- POP ----------------
+    def pop_effect(self):
+        anim = Animation(font_size=40, duration=0.1) + Animation(font_size=32, duration=0.1)
         anim.start(self.result)
 
-        self.update_ui(result)
-        self.roll_btn.disabled = False
-        save()
+    # ---------------- PARTICLES ----------------
+    def particles(self, rarity):
+        if rarity in ["Epic","Legendary","Mythic"]:
+            count = 25 if rarity != "Mythic" else 60
 
-    # ---------------- SHOP ----------------
-    def shop(self, _):
-        global coins, luck
+            color = {
+                "Epic": (0.8,0.3,1),
+                "Legendary": (1,0.8,0.2),
+                "Mythic": (1,0.2,0.2)
+            }[rarity]
 
-        if coins >= 100:
-            coins -= 100
-            luck += 0.2
-            self.update_ui("Bought Luck Upgrade")
-
-    # ---------------- INVENTORY ----------------
-    def show_inv(self, _):
-        self.update_ui("Inventory:\n" + "\n".join(inventory[-6:]))
+            for _ in range(count):
+                p = Particle(
+                    self.center_x,
+                    self.center_y,
+                    (*color,1)
+                )
+                self.add_widget(p)
 
 # ---------------- APP ----------------
 class RNGApp(App):
